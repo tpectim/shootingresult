@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ISSF 紀錄系統</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 /* --- 全域設定 --- */
 * { box-sizing: border-box; }
@@ -18,7 +19,7 @@ body { margin: 0; background-color: #111; overflow: hidden; font-family: -apple-
 
 /* --- 左上角：計分板 --- */
 .score-panel { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 6px; pointer-events: auto; width: min(85vw, 360px); max-height: 55vh; z-index: 10; }
-.total-score-box { color: #ffd700; font-size: clamp(18px, 4vw, 24px); font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); background: rgba(0,0,0,0.7); padding: 6px; border-radius: 8px; border: 2px solid #ffd700; text-align: center; }
+.total-score-box { color: #ffd700; font-size: clamp(18px, 4vw, 24px); font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); background: rgba(0,0,0,0.7); padding: 8px 10px; border-radius: 8px; border: 2px solid #ffd700; text-align: left; }
 .history-container { background: rgba(0,0,0,0.6); border-radius: 8px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 4px; backdrop-filter: blur(4px); scrollbar-width: none; }
 .history-container::-webkit-scrollbar { display: none; }
 .series-block { background: rgba(255,255,255,0.08); border-radius: 4px; padding: 4px; border: 1px solid #444; }
@@ -28,6 +29,11 @@ body { margin: 0; background-color: #111; overflow: hidden; font-family: -apple-
 .shot-badge:active { transform: scale(0.9); }
 .shot-badge.ten { background: #ffd700; color: #000; }
 .shot-badge.nine { background: #c0c0c0; color: #000; }
+.shot-badge.misfire { background: #607d8b; color: #fff; text-align: center; padding-right: 0; }
+
+/* 圖表按鈕 */
+#btn-show-charts { background: #2196F3; border: none; color: white; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; transition: transform 0.1s; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+#btn-show-charts:active { transform: scale(0.95); }
 
 /* --- 右上角：按鈕區 --- */
 .action-bar { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); display: flex; gap: 5px; pointer-events: auto; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; z-index: 110; width: 60%; }
@@ -47,16 +53,33 @@ body { margin: 0; background-color: #111; overflow: hidden; font-family: -apple-
 .entry-header { position: absolute; top: 0; left: 0; width: 100%; padding: max(20px, env(safe-area-inset-top)) 20px 10px; text-align: center; background: rgba(0,0,0,0.6); box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 201; pointer-events: none; }
 .entry-title { font-size: 16px; color: #aaa; margin: 0 0 5px 0; }
 #entry-score-display { font-size: 50px; font-weight: 900; color: #ffd700; text-shadow: 0 0 15px rgba(255,215,0,0.5); margin: 0; line-height: 1; pointer-events: none; }
-.entry-footer { position: absolute; bottom: 0; left: 0; width: 100%; padding: 15px max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); display: flex; justify-content: space-around; background: rgba(0,0,0,0.6); z-index: 201; }
-.btn-entry { padding: 15px 30px; font-size: 18px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer; min-width: 120px; }
+#entry-timer-display { font-size: 22px; font-weight: bold; color: #00bcd4; margin-top: 5px; pointer-events: none; }
+#entry-match-time-display { font-size: 14px; color: #888; margin-top: 3px; pointer-events: none; }
+.entry-footer { position: absolute; bottom: 0; left: 0; width: 100%; padding: 10px max(10px, env(safe-area-inset-right)) max(15px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); display: flex; justify-content: space-between; background: rgba(0,0,0,0.8); z-index: 201; gap: 5px; }
+.btn-entry { padding: 15px 5px; font-size: 14px; font-weight: bold; border-radius: 10px; border: none; cursor: pointer; flex: 1; transition: opacity 0.2s; }
 #btn-entry-cancel { background: #555; color: white; }
-#btn-entry-confirm { background: #4caf50; color: white; box-shadow: 0 0 15px rgba(76,175,80,0.4); }
+#btn-entry-misfire { background: #607d8b; color: white; }
+#btn-entry-fire { background: #ff9800; color: #000; box-shadow: 0 0 10px rgba(255,152,0,0.5); }
+#btn-entry-confirm { background: #4caf50; color: white; box-shadow: 0 0 10px rgba(76,175,80,0.4); }
 
 /* --- 編輯/刪除彈跳選單 --- */
 #action-modal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 400; display: none; justify-content: center; align-items: center; padding: 20px; }
 .modal-content { background: #222; border: 1px solid #555; border-radius: 16px; padding: 25px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
-.modal-buttons { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.modal-buttons { display: flex; flex-direction: column; gap: 12px; margin-top: 15px; }
 .btn-modal { padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; color: white; cursor: pointer; }
+
+/* --- 圖表分析彈跳視窗 --- */
+#chart-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.9); z-index: 450; display: none;
+    flex-direction: column; align-items: center; justify-content: flex-start;
+    padding: max(20px, env(safe-area-inset-top)) 20px 20px 20px; overflow-y: auto;
+}
+.chart-container {
+    width: 100%; max-width: 800px; background: #222; padding: 20px;
+    border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    margin-bottom: 20px; flex-shrink: 0; border: 1px solid #444;
+}
 
 /* --- 啟動畫面 --- */
 #start-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); z-index: 500; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px; }
@@ -72,12 +95,19 @@ body { margin: 0; background-color: #111; overflow: hidden; font-family: -apple-
         <div class="score-panel">
             <div class="total-score-box">
                 <div id="display-name" style="font-size: 14px; color: #00bcd4; margin-bottom: 2px; display: none;"></div>
-                總分: <span id="total-score">0</span>
+                <div id="match-timer-display" style="font-size: 14px; color: #aaa; margin-bottom: 2px; display: none;">總耗時: 00:00</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                    <span>總分: <span id="total-score">0</span></span>
+                    <button id="btn-show-charts">📊 圖表</button>
+                </div>
             </div>
             <div class="history-container" id="history-container"></div>
         </div>
         
         <div class="action-bar">
+            <button class="btn-action" id="btn-match-start" style="background: #2196F3; border-color: #64b5f6;">▶️ 比賽開始</button>
+            <button class="btn-action" id="btn-match-end" style="background: #f44336; border-color: #e57373; display: none;">⏹ 比賽結束</button>
+
             <button class="btn-action" id="btn-toggle-view">👁 1-10 發</button>
             <button class="btn-action" id="btn-import-csv">📥 匯入</button>
             <input type="file" id="csv-upload" accept=".csv">
@@ -95,10 +125,14 @@ body { margin: 0; background-color: #111; overflow: hidden; font-family: -apple-
         <div class="entry-header">
             <p class="entry-title" id="entry-mode-title">請在畫面上拖曳標記彈著點</p>
             <div id="entry-score-display">10.9</div>
+            <div id="entry-timer-display">0.0 s</div>
+            <div id="entry-match-time-display"></div>
         </div>
         <canvas id="entryCanvas"></canvas>
         <div class="entry-footer">
             <button class="btn-entry" id="btn-entry-cancel">取消</button>
+            <button class="btn-entry" id="btn-entry-misfire">⛔ 未擊發</button>
+            <button class="btn-entry" id="btn-entry-fire">💥 擊發</button>
             <button class="btn-entry" id="btn-entry-confirm">確認</button>
         </div>
     </div>
@@ -106,7 +140,11 @@ body { margin: 0; background-color: #111; overflow: hidden; font-family: -apple-
     <div id="action-modal">
         <div class="modal-content">
             <h3 id="modal-title" style="margin-top:0; color:#ddd;">編輯第 1 發</h3>
-            <p style="font-size: 18px;">目前分數: <span id="modal-score" style="color:#ffd700; font-weight:900; font-size: 24px;">10.9</span></p>
+            <p style="font-size: 18px; margin: 10px 0;">目前分數: <span id="modal-score" style="color:#ffd700; font-weight:900; font-size: 24px;">10.9</span></p>
+            <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; margin-bottom: 15px;">
+                <p style="font-size: 14px; color: #aaa; margin: 0 0 5px 0;">單發耗時: <span id="modal-time" style="color: #fff; font-weight: bold; font-size: 16px;">0</span> 秒</p>
+                <p style="font-size: 14px; color: #aaa; margin: 0;">比賽時間點: <span id="modal-match-time" style="color: #00bcd4; font-weight: bold; font-size: 16px;">--:--</span></p>
+            </div>
             <div class="modal-buttons">
                 <button id="btn-modal-edit" class="btn-modal" style="background:#00bcd4; color:#000;">重新標記位置</button>
                 <button id="btn-modal-delete" class="btn-modal" style="background:#f44336;">刪除此發</button>
@@ -115,11 +153,43 @@ body { margin: 0; background-color: #111; overflow: hidden; font-family: -apple-
         </div>
     </div>
 
+    <div id="chart-overlay">
+        <div class="chart-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0; color: #ffd700;">📊 成績分析 (已排除未擊發)</h2>
+                <button id="btn-close-charts" style="background: #f44336; border: none; color: white; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-weight: bold;">關閉</button>
+            </div>
+            
+            <div style="margin-bottom: 30px;">
+                <h4 style="text-align: left; margin-bottom: 10px; color: #ccc;">單發分數 (長條圖)</h4>
+                <canvas id="scoreChartCanvas"></canvas>
+            </div>
+            
+            <hr style="border-color: #444; margin: 20px 0;">
+            
+            <div style="margin-bottom: 30px;">
+                <h4 style="text-align: left; margin-bottom: 10px; color: #ccc;">單發耗時 (長條圖)</h4>
+                <canvas id="timeChartCanvas"></canvas>
+            </div>
+
+            <hr style="border-color: #444; margin: 20px 0;">
+            
+            <div style="margin-bottom: 30px;">
+                <h4 style="text-align: left; margin-bottom: 10px; color: #ccc;">單發分數 (折線圖)</h4>
+                <canvas id="scoreLineChartCanvas"></canvas>
+            </div>
+
+            <hr style="border-color: #444; margin: 20px 0;">
+            
+            <div>
+                <h4 style="text-align: left; margin-bottom: 10px; color: #ccc;">單發耗時 (折線圖)</h4>
+                <canvas id="timeLineChartCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
     <div id="start-overlay">
         <h1 style="color: #ffd700;">手動紀錄系統</h1>
-        <p style="color: #ccc; max-width: 400px; line-height: 1.6; text-align: left;">
-            
-        </p>
         <input type="text" id="input-start-name" placeholder="請輸入射手姓名 (可留空)" style="margin-top: 15px; padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #555; background: rgba(255,255,255,0.1); color: #fff; text-align: center; width: 80%; max-width: 250px;">
         <button id="start-btn">開始紀錄</button>
     </div>
@@ -137,6 +207,16 @@ let currentViewSeries = 0;
 let editingShotIndex = -1;
 let selectedModalIndex = -1;
 
+// --- 計時相關變數 ---
+let matchStartTime = null;
+let matchInterval = null;
+let isMatchRunning = false;
+
+let shotStartTime = null;
+let shotTimerInterval = null;
+let lockedShotTime = null; 
+let currentShotMatchTime = "--:--"; 
+
 const mainCanvas = document.getElementById('gameCanvas');
 const mainCtx = mainCanvas.getContext('2d');
 const entryCanvas = document.getElementById('entryCanvas');
@@ -153,8 +233,9 @@ let currentEntryMarker = { x: 0, y: 0 };
 let currentEntryScore = 10.9;
 
 function getLatestSeriesIndex() {
-    if (shotHistory.length === 0) return 0;
-    return Math.floor((shotHistory.length - 1) / 10);
+    let validCount = shotHistory.filter(s => !s.isMisfire).length;
+    if (validCount === 0) return 0;
+    return Math.floor((validCount - 1) / 10);
 }
 
 function updateToggleViewBtn() {
@@ -245,19 +326,30 @@ function drawMainScene() {
     drawTarget(mainCtx, targetLayout);
     
     const bulletRadius = targetLayout.radius * CONFIG.simulatedBulletRadiusRatio;
-    let startIndex = 0; let endIndex = shotHistory.length - 1;
     
-    if (currentViewSeries !== -1) {
-        startIndex = currentViewSeries * 10;
-        endIndex = startIndex + 9;
-    }
+    let validShotCount = 0;
+    let lastValidIndex = -1;
+    
+    shotHistory.forEach((shot, index) => {
+        if (!shot.isMisfire) lastValidIndex = index;
+    });
 
     shotHistory.forEach((shot, index) => {
-        if (index >= startIndex && index <= endIndex) {
-            const isLast = index === shotHistory.length - 1;
+        let currentValidIndex = validShotCount;
+        if (!shot.isMisfire) {
+            validShotCount++;
+        } else {
+            return; 
+        }
+        
+        let groupIndex = Math.floor(currentValidIndex / 10);
+        let belongsToView = (currentViewSeries === -1 || groupIndex === currentViewSeries);
+
+        if (belongsToView) {
+            const isLast = (index === lastValidIndex);
             const absX = targetLayout.cx + (shot.relX * targetLayout.radius);
             const absY = targetLayout.cy + (shot.relY * targetLayout.radius);
-            drawBulletHole(mainCtx, absX, absY, bulletRadius, isLast, (index + 1).toString());
+            drawBulletHole(mainCtx, absX, absY, bulletRadius, isLast, (currentValidIndex + 1).toString());
         }
     });
 }
@@ -266,7 +358,12 @@ function drawEntryScene() {
     entryCtx.clearRect(0, 0, entryCanvas.width, entryCanvas.height);
     drawTarget(entryCtx, targetLayout);
     const bulletRadius = targetLayout.radius * CONFIG.simulatedBulletRadiusRatio;
-    const label = editingShotIndex === -1 ? "新" : (editingShotIndex + 1).toString();
+    
+    let validCountBefore = editingShotIndex === -1 ? 
+        shotHistory.filter(s => !s.isMisfire).length : 
+        shotHistory.slice(0, editingShotIndex).filter(s => !s.isMisfire).length;
+    
+    const label = editingShotIndex === -1 ? "新" : (validCountBefore + 1).toString();
     
     entryCtx.beginPath();
     entryCtx.moveTo(currentEntryMarker.x - 20, currentEntryMarker.y); entryCtx.lineTo(currentEntryMarker.x + 20, currentEntryMarker.y);
@@ -320,20 +417,35 @@ window.addEventListener('touchend', pointerUp);
 
 function rebuildScoreboard() {
     let grandTotal = 0;
-    shotHistory.forEach(s => grandTotal += Math.floor(s.score));
-    totalScoreEl.textContent = grandTotal; 
+    let validShotCount = 0;
     
     historyContainerEl.innerHTML = '';
     let seriesData = [];
 
     shotHistory.forEach((shot, index) => {
-        const groupIndex = Math.floor(index / 10);
-        if (!seriesData[groupIndex]) {
-            seriesData[groupIndex] = { total: 0, shots: [], startIdx: groupIndex * 10 };
+        if (!shot.isMisfire) {
+            grandTotal += Math.floor(shot.score);
         }
-        seriesData[groupIndex].shots.push(shot);
-        seriesData[groupIndex].total += Math.floor(shot.score);
+        
+        let groupIndex = Math.floor(validShotCount / 10);
+        
+        if (!seriesData[groupIndex]) {
+            seriesData[groupIndex] = { total: 0, items: [] };
+        }
+        
+        seriesData[groupIndex].items.push({ 
+            originalIndex: index, 
+            shot: shot, 
+            validIndex: shot.isMisfire ? -1 : validShotCount 
+        });
+        
+        if (!shot.isMisfire) {
+            seriesData[groupIndex].total += Math.floor(shot.score);
+            validShotCount++;
+        }
     });
+
+    totalScoreEl.textContent = grandTotal; 
 
     seriesData.forEach((group, groupIndex) => {
         if (currentViewSeries !== -1 && currentViewSeries !== groupIndex) return; 
@@ -343,19 +455,37 @@ function rebuildScoreboard() {
         
         const header = document.createElement('div');
         header.className = 'series-header';
-        const endIdx = group.startIdx + group.shots.length - 1;
-        header.innerHTML = `<span>Series ${groupIndex + 1} (${group.startIdx + 1}-${endIdx + 1})</span><span class="series-total" style="color:#ffd700;">小計: ${group.total}</span>`;
+        
+        const validShotsInGroup = group.items.filter(i => !i.shot.isMisfire);
+        let titleText = `Series ${groupIndex + 1}`;
+        if (validShotsInGroup.length > 0) {
+            const start = validShotsInGroup[0].validIndex + 1;
+            const end = validShotsInGroup[validShotsInGroup.length - 1].validIndex + 1;
+            titleText += ` (${start}-${end})`;
+        } else {
+            titleText += ` (無有效彈著)`;
+        }
+        
+        header.innerHTML = `<span>${titleText}</span><span class="series-total" style="color:#ffd700;">小計: ${group.total}</span>`;
         
         const shotsDiv = document.createElement('div');
         shotsDiv.className = 'series-shots';
         
-        group.shots.forEach((shot, i) => {
+        group.items.forEach((item) => {
             const badge = document.createElement('div');
             badge.className = 'shot-badge';
-            badge.dataset.index = group.startIdx + i;
-            if (shot.score >= 10.0) badge.classList.add('ten');
-            else if (shot.score >= 9.0) badge.classList.add('nine');
-            badge.textContent = shot.score.toFixed(1);
+            badge.dataset.index = item.originalIndex;
+            
+            if (item.shot.isMisfire) {
+                badge.classList.add('misfire');
+                badge.textContent = '未';
+                badge.title = `未擊發 | 耗時: ${item.shot.time || 0} 秒 | 比賽時間點: ${item.shot.matchTime || '--:--'}`;
+            } else {
+                badge.title = `耗時: ${item.shot.time || 0} 秒 | 比賽時間點: ${item.shot.matchTime || '--:--'}`; 
+                if (item.shot.score >= 10.0) badge.classList.add('ten');
+                else if (item.shot.score >= 9.0) badge.classList.add('nine');
+                badge.textContent = item.shot.score.toFixed(1);
+            }
             shotsDiv.appendChild(badge);
         });
 
@@ -367,35 +497,159 @@ function rebuildScoreboard() {
     drawMainScene();
 }
 
-// UI 按鈕綁定
+// --- 比賽總計時控制 ---
+document.getElementById('btn-match-start').addEventListener('click', () => {
+    if (!isMatchRunning) {
+        matchStartTime = Date.now();
+        isMatchRunning = true;
+        document.getElementById('btn-match-start').style.display = 'none';
+        document.getElementById('btn-match-end').style.display = 'inline-block';
+        document.getElementById('match-timer-display').style.display = 'block';
+        
+        matchInterval = setInterval(() => {
+            const elapsed = Date.now() - matchStartTime;
+            const secs = Math.floor((elapsed / 1000) % 60);
+            const mins = Math.floor((elapsed / 1000) / 60);
+            document.getElementById('match-timer-display').textContent = `總耗時: ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }, 1000);
+    }
+});
+
+document.getElementById('btn-match-end').addEventListener('click', () => {
+    if (isMatchRunning) {
+        clearInterval(matchInterval);
+        isMatchRunning = false;
+        document.getElementById('btn-match-start').style.display = 'inline-block';
+        document.getElementById('btn-match-end').style.display = 'none';
+    }
+});
+
+// --- 單發計時與新增編輯流程 ---
+function updateEntryTimer() {
+    if (shotStartTime && lockedShotTime === null) {
+        const elapsed = ((Date.now() - shotStartTime) / 1000).toFixed(1);
+        document.getElementById('entry-timer-display').textContent = elapsed + ' s';
+    }
+}
+
 document.getElementById('btn-add-shot').addEventListener('click', () => {
     editingShotIndex = -1;
     document.getElementById('entry-mode-title').textContent = "📍 新增彈著點";
+    
+    if (isMatchRunning) {
+        const elapsed = Date.now() - matchStartTime;
+        const secs = Math.floor((elapsed / 1000) % 60);
+        const mins = Math.floor((elapsed / 1000) / 60);
+        currentShotMatchTime = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    } else {
+        currentShotMatchTime = "--:--";
+    }
+    
+    document.getElementById('entry-timer-display').style.display = 'block';
+    const matchTimeDisplay = document.getElementById('entry-match-time-display');
+    matchTimeDisplay.style.display = 'block';
+    matchTimeDisplay.textContent = `擷取比賽時間: ${currentShotMatchTime}`;
+    
+    const fireBtn = document.getElementById('btn-entry-fire');
+    fireBtn.style.display = 'block';
+    fireBtn.textContent = '💥 擊發';
+    fireBtn.style.opacity = '1';
+    fireBtn.disabled = false;
+    
+    const misfireBtn = document.getElementById('btn-entry-misfire');
+    misfireBtn.style.display = 'block';
+
     entryOverlay.style.display = 'block';
     resizeCanvases();
     currentEntryMarker = { x: targetLayout.cx, y: targetLayout.cy };
     currentEntryScore = 10.9;
     entryScoreDisplay.textContent = "10.9";
     entryScoreDisplay.style.color = '#ffd700';
+    
+    shotStartTime = Date.now();
+    lockedShotTime = null;
+    document.getElementById('entry-timer-display').textContent = '0.0 s';
+    clearInterval(shotTimerInterval);
+    shotTimerInterval = setInterval(updateEntryTimer, 100);
+
     drawEntryScene();
 });
 
+document.getElementById('btn-entry-fire').addEventListener('click', () => {
+    if (lockedShotTime === null && shotStartTime) {
+        lockedShotTime = ((Date.now() - shotStartTime) / 1000).toFixed(1);
+        clearInterval(shotTimerInterval);
+        document.getElementById('entry-timer-display').textContent = lockedShotTime + ' s (已停錶)';
+        
+        const fireBtn = document.getElementById('btn-entry-fire');
+        fireBtn.textContent = '✔️ 已擊發';
+        fireBtn.style.opacity = '0.5';
+        fireBtn.disabled = true;
+    }
+});
+
+document.getElementById('btn-entry-misfire').addEventListener('click', () => {
+    clearInterval(shotTimerInterval);
+    let timeTaken = 0;
+    if (lockedShotTime !== null) {
+        timeTaken = lockedShotTime;
+    } else if (shotStartTime) {
+        timeTaken = ((Date.now() - shotStartTime) / 1000).toFixed(1);
+    }
+    
+    shotHistory.push({ 
+        relX: null, relY: null, score: 0, 
+        time: timeTaken, matchTime: currentShotMatchTime, 
+        isMisfire: true 
+    });
+    
+    currentViewSeries = getLatestSeriesIndex(); 
+    updateToggleViewBtn();
+    
+    shotStartTime = null;
+    lockedShotTime = null;
+    rebuildScoreboard();
+    entryOverlay.style.display = 'none';
+});
+
 document.getElementById('btn-entry-confirm').addEventListener('click', () => {
+    clearInterval(shotTimerInterval);
     const relX = (currentEntryMarker.x - targetLayout.cx) / targetLayout.radius;
     const relY = (currentEntryMarker.y - targetLayout.cy) / targetLayout.radius;
 
+    let timeTaken = 0;
     if (editingShotIndex === -1) {
-        shotHistory.push({ relX: relX, relY: relY, score: currentEntryScore });
+        if (lockedShotTime !== null) timeTaken = lockedShotTime;
+        else if (shotStartTime) timeTaken = ((Date.now() - shotStartTime) / 1000).toFixed(1);
+        
+        shotHistory.push({ 
+            relX: relX, relY: relY, score: currentEntryScore, 
+            time: timeTaken, matchTime: currentShotMatchTime, 
+            isMisfire: false 
+        });
         currentViewSeries = getLatestSeriesIndex(); 
         updateToggleViewBtn();
     } else {
-        shotHistory[editingShotIndex] = { relX: relX, relY: relY, score: currentEntryScore };
+        const oldTime = shotHistory[editingShotIndex].time || 0;
+        const oldMatchTime = shotHistory[editingShotIndex].matchTime || "--:--";
+        const oldIsMisfire = shotHistory[editingShotIndex].isMisfire || false;
+        shotHistory[editingShotIndex] = { 
+            relX: relX, relY: relY, score: currentEntryScore, 
+            time: oldTime, matchTime: oldMatchTime, 
+            isMisfire: oldIsMisfire 
+        };
     }
+    
+    shotStartTime = null;
+    lockedShotTime = null;
     rebuildScoreboard();
     entryOverlay.style.display = 'none';
 });
 
 document.getElementById('btn-entry-cancel').addEventListener('click', () => {
+    clearInterval(shotTimerInterval);
+    shotStartTime = null; 
+    lockedShotTime = null;
     entryOverlay.style.display = 'none';
 });
 
@@ -403,8 +657,22 @@ historyContainerEl.addEventListener('click', (e) => {
     if (e.target.classList.contains('shot-badge')) {
         selectedModalIndex = parseInt(e.target.dataset.index);
         const shot = shotHistory[selectedModalIndex];
-        document.getElementById('modal-title').textContent = `編輯第 ${selectedModalIndex + 1} 發`;
-        document.getElementById('modal-score').textContent = shot.score.toFixed(1);
+        
+        if (shot.isMisfire) {
+            document.getElementById('modal-title').textContent = `編輯未擊發紀錄`;
+            document.getElementById('modal-score').textContent = '未擊發';
+            document.getElementById('modal-score').style.color = '#888';
+            document.getElementById('btn-modal-edit').style.display = 'none'; 
+        } else {
+            let validIdx = shotHistory.slice(0, selectedModalIndex).filter(s => !s.isMisfire).length;
+            document.getElementById('modal-title').textContent = `編輯第 ${validIdx + 1} 發`;
+            document.getElementById('modal-score').textContent = shot.score.toFixed(1);
+            document.getElementById('modal-score').style.color = '#ffd700';
+            document.getElementById('btn-modal-edit').style.display = 'block'; 
+        }
+
+        document.getElementById('modal-time').textContent = shot.time || '0.0'; 
+        document.getElementById('modal-match-time').textContent = shot.matchTime || '--:--'; 
         actionModal.style.display = 'flex';
     }
 });
@@ -412,7 +680,7 @@ historyContainerEl.addEventListener('click', (e) => {
 document.getElementById('btn-modal-cancel').addEventListener('click', () => actionModal.style.display = 'none');
 
 document.getElementById('btn-modal-delete').addEventListener('click', () => {
-    if (confirm(`確定要刪除第 ${selectedModalIndex + 1} 發嗎？`)) {
+    if (confirm(`確定要刪除這筆紀錄嗎？`)) {
         shotHistory.splice(selectedModalIndex, 1);
         let maxSeries = getLatestSeriesIndex();
         if (currentViewSeries > maxSeries) currentViewSeries = maxSeries;
@@ -426,7 +694,15 @@ document.getElementById('btn-modal-edit').addEventListener('click', () => {
     actionModal.style.display = 'none';
     editingShotIndex = selectedModalIndex;
     const shot = shotHistory[editingShotIndex];
-    document.getElementById('entry-mode-title').textContent = `✏️ 編輯第 ${editingShotIndex + 1} 發`;
+    
+    let validIdx = shotHistory.slice(0, editingShotIndex).filter(s => !s.isMisfire).length;
+    document.getElementById('entry-mode-title').textContent = `✏️ 編輯第 ${validIdx + 1} 發`;
+    
+    document.getElementById('entry-timer-display').style.display = 'none';
+    document.getElementById('entry-match-time-display').style.display = 'none';
+    document.getElementById('btn-entry-fire').style.display = 'none';
+    document.getElementById('btn-entry-misfire').style.display = 'none'; 
+
     entryOverlay.style.display = 'block';
     resizeCanvases();
     currentEntryMarker.x = targetLayout.cx + (shot.relX * targetLayout.radius);
@@ -440,6 +716,14 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     if(confirm('確定要清空所有紀錄嗎？')) {
         shotHistory = []; 
         currentViewSeries = 0;
+        
+        clearInterval(matchInterval);
+        isMatchRunning = false;
+        document.getElementById('btn-match-start').style.display = 'inline-block';
+        document.getElementById('btn-match-end').style.display = 'none';
+        document.getElementById('match-timer-display').style.display = 'none';
+        document.getElementById('match-timer-display').textContent = '總耗時: 00:00';
+
         updateToggleViewBtn(); rebuildScoreboard();
     }
 });
@@ -458,12 +742,229 @@ document.getElementById('start-btn').addEventListener('click', () => {
     resizeCanvases();
 });
 
+
+// --- 自訂 Chart.js 繪圖外掛 ---
+
+// 外掛：畫一條黃色的水平虛線 (用在 Y=9)
+const targetLinePlugin = {
+    id: 'targetLinePlugin',
+    beforeDraw: (chart) => {
+        if (chart.config.options.plugins.targetLinePlugin && chart.config.options.plugins.targetLinePlugin.show) {
+            const ctx = chart.ctx;
+            const yAxis = chart.scales.y;
+            const xAxis = chart.scales.x;
+            const yPixel = yAxis.getPixelForValue(9);
+            
+            ctx.save();
+            ctx.beginPath();
+            ctx.setLineDash([5, 5]); 
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255, 235, 59, 0.8)'; // 黃色
+            ctx.moveTo(xAxis.left, yPixel);
+            ctx.lineTo(xAxis.right, yPixel);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+};
+
+// 外掛：在資料點頂部畫出分數 (同時適用於長條圖與折線圖)
+const scoreLabelPlugin = {
+    id: 'scoreLabelPlugin',
+    afterDatasetsDraw: (chart) => {
+        if (chart.config.options.plugins.scoreLabelPlugin && chart.config.options.plugins.scoreLabelPlugin.scores) {
+            const ctx = chart.ctx;
+            const scores = chart.config.options.plugins.scoreLabelPlugin.scores;
+            
+            chart.data.datasets.forEach((dataset, i) => {
+                const meta = chart.getDatasetMeta(i);
+                meta.data.forEach((element, index) => {
+                    const score = scores[index];
+                    ctx.save();
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.font = 'bold 12px Arial';
+                    // 顯示整數分數，Y軸往上偏移 6px 避免擋到折線圖的點
+                    ctx.fillText(Math.floor(score), element.x, element.y - 6);
+                    ctx.restore();
+                });
+            });
+        }
+    }
+};
+
+Chart.register(targetLinePlugin, scoreLabelPlugin);
+
+
+// --- 圖表繪製與管理邏輯 ---
+let scoreChartInstance = null;
+let timeChartInstance = null;
+let scoreLineChartInstance = null;
+let timeLineChartInstance = null;
+
+Chart.defaults.color = '#bbb';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.1)';
+
+document.getElementById('btn-show-charts').addEventListener('click', () => {
+    // 過濾掉未擊發的紀錄
+    const validShots = shotHistory.filter(s => !s.isMisfire);
+    
+    if (validShots.length === 0) {
+        alert("目前尚無有效成績紀錄可供分析。");
+        return;
+    }
+
+    document.getElementById('chart-overlay').style.display = 'flex';
+
+    // 整理純有效發數的標籤與數據
+    const labels = validShots.map((shot, i) => `第 ${i + 1} 發`);
+    const scores = validShots.map(s => s.score);
+    const times = validShots.map(s => parseFloat(s.time) || 0);
+
+    // 1. 單發分數 (長條圖)
+    const ctxScore = document.getElementById('scoreChartCanvas').getContext('2d');
+    if (scoreChartInstance) scoreChartInstance.destroy();
+    
+    scoreChartInstance = new Chart(ctxScore, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '單發分數',
+                data: scores,
+                backgroundColor: 'rgba(255, 215, 0, 0.7)',
+                borderColor: '#ffd700',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 10.9,
+                    ticks: { stepSize: 1 } 
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                targetLinePlugin: { show: true }, // 開啟黃色虛線
+                tooltip: { callbacks: { label: function(context) { return `分數: ${context.raw}`; } } }
+            }
+        }
+    });
+
+    // 2. 單發耗時 (長條圖)
+    const ctxTime = document.getElementById('timeChartCanvas').getContext('2d');
+    if (timeChartInstance) timeChartInstance.destroy();
+    
+    timeChartInstance = new Chart(ctxTime, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '單發耗時 (秒)',
+                data: times,
+                backgroundColor: 'rgba(0, 188, 212, 0.7)',
+                borderColor: '#00bcd4',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: '秒 (s)' } }
+            },
+            plugins: {
+                legend: { display: false },
+                scoreLabelPlugin: { scores: scores } // 開啟頂部分數顯示
+            }
+        }
+    });
+
+    // 3. 單發分數 (折線圖)
+    const ctxScoreLine = document.getElementById('scoreLineChartCanvas').getContext('2d');
+    if (scoreLineChartInstance) scoreLineChartInstance.destroy();
+
+    scoreLineChartInstance = new Chart(ctxScoreLine, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '單發分數',
+                data: scores,
+                backgroundColor: 'rgba(255, 215, 0, 0.2)',
+                borderColor: '#ffd700',
+                borderWidth: 2,
+                pointBackgroundColor: '#ffd700',
+                pointRadius: 4,
+                fill: false,
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 10.9,
+                    ticks: { stepSize: 1 }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                targetLinePlugin: { show: true } // 開啟黃色虛線
+            }
+        }
+    });
+
+    // 4. 單發耗時 (折線圖)
+    const ctxTimeLine = document.getElementById('timeLineChartCanvas').getContext('2d');
+    if (timeLineChartInstance) timeLineChartInstance.destroy();
+
+    timeLineChartInstance = new Chart(ctxTimeLine, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '單發耗時 (秒)',
+                data: times,
+                backgroundColor: 'rgba(0, 188, 212, 0.2)',
+                borderColor: '#00bcd4',
+                borderWidth: 2,
+                pointBackgroundColor: '#00bcd4',
+                pointRadius: 4,
+                fill: false,
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: '秒 (s)' } }
+            },
+            plugins: {
+                legend: { display: false },
+                scoreLabelPlugin: { scores: scores } // 開啟頂部分數顯示 (折線圖適用)
+            }
+        }
+    });
+});
+
+document.getElementById('btn-close-charts').addEventListener('click', () => {
+    document.getElementById('chart-overlay').style.display = 'none';
+});
+
+
 // --- CSV 匯出與匯入 ---
 document.getElementById('btn-export-csv').addEventListener('click', () => {
     if(shotHistory.length === 0) return alert("目前沒有紀錄可匯出");
     let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
-    csvContent += "Index,RelX,RelY,Score\n";
-    shotHistory.forEach((s, i) => { csvContent += `${i+1},${s.relX},${s.relY},${s.score}\n`; });
+    csvContent += "Index,RelX,RelY,Score,Time(s),MatchTime,IsMisfire\n";
+    shotHistory.forEach((s, i) => { 
+        csvContent += `${i+1},${s.relX || 0},${s.relY || 0},${s.score},${s.time || 0},${s.matchTime || '--:--'},${s.isMisfire ? 1 : 0}\n`; 
+    });
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,"");
@@ -490,7 +991,17 @@ document.getElementById('csv-upload').addEventListener('change', (e) => {
                 if (!lines[i].trim()) continue;
                 const parts = lines[i].split(',');
                 if (parts.length >= 4) {
-                    newHistory.push({ relX: parseFloat(parts[1]), relY: parseFloat(parts[2]), score: parseFloat(parts[3]) });
+                    let timeVal = parts.length >= 5 ? parseFloat(parts[4]) : 0; 
+                    let matchTimeVal = parts.length >= 6 ? parts[5].trim() : "--:--"; 
+                    let isMisfireVal = parts.length >= 7 ? parseInt(parts[6]) === 1 : false;
+                    newHistory.push({ 
+                        relX: parseFloat(parts[1]), 
+                        relY: parseFloat(parts[2]), 
+                        score: parseFloat(parts[3]), 
+                        time: timeVal,
+                        matchTime: matchTimeVal,
+                        isMisfire: isMisfireVal
+                    });
                 }
             }
             if (newHistory.length > 0) {
@@ -498,7 +1009,7 @@ document.getElementById('csv-upload').addEventListener('change', (e) => {
                 currentViewSeries = getLatestSeriesIndex(); 
                 updateToggleViewBtn();
                 rebuildScoreboard();
-                alert(`成功匯入 ${newHistory.length} 發彈著紀錄！`);
+                alert(`成功匯入 ${newHistory.length} 筆紀錄！`);
             }
         } catch (err) { alert("CSV 格式錯誤，無法匯入！"); }
         e.target.value = ""; 
@@ -508,11 +1019,10 @@ document.getElementById('csv-upload').addEventListener('change', (e) => {
 
 
 // --- PDF 自動匯出功能 ---
-
-function createPdfTargetCanvas(startIdx, endIdx, titleText, includeScores = false) {
+function createPdfTargetCanvas(startIdx, endIdx, titleText, includeScores = false, validShots) {
     const cvs = document.createElement('canvas');
     cvs.width = 800; 
-    cvs.height = includeScores ? 920 : 800; // 預留底部文字空間
+    cvs.height = includeScores ? 920 : 800; 
     const ctx = cvs.getContext('2d');
     
     ctx.fillStyle = '#FFF';
@@ -530,14 +1040,13 @@ function createPdfTargetCanvas(startIdx, endIdx, titleText, includeScores = fals
     const bulletRadius = layout.radius * CONFIG.simulatedBulletRadiusRatio;
     
     for (let i = startIdx; i <= endIdx; i++) {
-        if (!shotHistory[i]) continue;
-        const shot = shotHistory[i];
+        if (!validShots[i]) continue;
+        const shot = validShots[i];
         const absX = layout.cx + (shot.relX * layout.radius);
         const absY = layout.cy + (shot.relY * layout.radius);
         drawBulletHole(ctx, absX, absY, bulletRadius, false, (i + 1).toString()); 
     }
     
-    // 繪製底部分數表 (純文字、無底色、一行 10 發)
     if (includeScores) {
         let sTotal = 0;
         const startX = 85; 
@@ -545,11 +1054,11 @@ function createPdfTargetCanvas(startIdx, endIdx, titleText, includeScores = fals
         
         ctx.fillStyle = '#000';
         ctx.font = 'bold 30px Arial';
-        ctx.textAlign = 'right'; // 嚴格靠右對齊
+        ctx.textAlign = 'right'; 
         
         for (let i = startIdx; i <= endIdx; i++) {
-            if (!shotHistory[i]) continue;
-            const score = shotHistory[i].score;
+            if (!validShots[i]) continue;
+            const score = validShots[i].score;
             sTotal += Math.floor(score);
             
             const relI = i - startIdx;
@@ -568,9 +1077,9 @@ function createPdfTargetCanvas(startIdx, endIdx, titleText, includeScores = fals
     return cvs.toDataURL('image/jpeg', 0.9);
 }
 
-function createAllScoresCanvas() {
+function createAllScoresCanvas(validShots) {
     const cvs = document.createElement('canvas');
-    const numSeries = Math.ceil(shotHistory.length / 10) || 1;
+    const numSeries = Math.ceil(validShots.length / 10) || 1;
     cvs.width = 1200; 
     cvs.height = 120 + numSeries * 65 + 80; 
     const ctx = cvs.getContext('2d');
@@ -581,7 +1090,7 @@ function createAllScoresCanvas() {
     ctx.fillStyle = '#000';
     ctx.font = 'bold 36px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText("各發成績明細表：", 30, 50);
+    ctx.fillText("各發成績明細表 (已過濾未擊發紀錄)：", 30, 50);
     
     for (let s = 0; s < numSeries; s++) {
         ctx.fillStyle = '#333';
@@ -592,12 +1101,12 @@ function createAllScoresCanvas() {
         let sTotal = 0;
         ctx.fillStyle = '#000';
         ctx.font = 'bold 28px Arial';
-        ctx.textAlign = 'right'; // 純文字、無底色、靠右對齊
+        ctx.textAlign = 'right'; 
         
         for (let i = 0; i < 10; i++) {
             const idx = s * 10 + i;
-            if (shotHistory[idx]) {
-                const score = shotHistory[idx].score;
+            if (validShots[idx]) {
+                const score = validShots[idx].score;
                 sTotal += Math.floor(score);
                 ctx.fillText(score.toFixed(1), 220 + i * 85, 110 + s * 65);
             }
@@ -609,7 +1118,6 @@ function createAllScoresCanvas() {
         ctx.fillText(`小計: ${sTotal}`, 1150, 110 + s * 65);
     }
     
-    // --- 底部發數統計 ---
     const statsY = 120 + numSeries * 65;
     
     ctx.beginPath();
@@ -620,7 +1128,7 @@ function createAllScoresCanvas() {
     ctx.stroke();
     
     let stats = {};
-    shotHistory.forEach(s => {
+    validShots.forEach(s => {
         let intScore = Math.floor(s.score);
         stats[intScore] = (stats[intScore] || 0) + 1;
     });
@@ -633,7 +1141,7 @@ function createAllScoresCanvas() {
     ctx.fillStyle = '#000';
     ctx.font = 'bold 26px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText(`【發數統計】  ${statStrings.join('    |    ')}`, 30, statsY + 30);
+    ctx.fillText(`【有效發數統計】  ${statStrings.join('    |    ')}`, 30, statsY + 30);
     
     return cvs.toDataURL('image/jpeg', 1.0);
 }
@@ -663,7 +1171,9 @@ function createPdfHeaderCanvas() {
 }
 
 document.getElementById('btn-export-pdf').addEventListener('click', async () => {
-    if(shotHistory.length === 0) return alert("目前沒有紀錄可匯出");
+    const validShots = shotHistory.filter(s => !s.isMisfire);
+    if(validShots.length === 0) return alert("目前沒有有效的擊發紀錄可匯出");
+    
     const btn = document.getElementById('btn-export-pdf');
     const originalText = btn.textContent;
     btn.textContent = "⚙️ 處理中...";
@@ -673,20 +1183,18 @@ document.getElementById('btn-export-pdf').addEventListener('click', async () => 
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'mm', 'a4'); 
             
-            // --- 第一頁：標題、所有彈孔大圖、表格成績 ---
             const headerImg = createPdfHeaderCanvas();
             pdf.addImage(headerImg, 'JPEG', 10, 10, 190, 38);
             
-            const mainTargetImg = createPdfTargetCanvas(0, shotHistory.length - 1, "", false); 
+            const mainTargetImg = createPdfTargetCanvas(0, validShots.length - 1, "", false, validShots); 
             pdf.addImage(mainTargetImg, 'JPEG', 35, 45, 140, 140);
             
-            const allScoresImg = createAllScoresCanvas();
+            const allScoresImg = createAllScoresCanvas(validShots);
             const pdfProps = pdf.getImageProperties(allScoresImg);
             const pdfHeight = (180 * pdfProps.height) / pdfProps.width;
             pdf.addImage(allScoresImg, 'JPEG', 15, 190, 180, pdfHeight);
             
-            // --- 第二頁起：10發一組 (每頁最多 6 組) ---
-            const seriesCount = Math.ceil(shotHistory.length / 10);
+            const seriesCount = Math.ceil(validShots.length / 10);
             let currentSeries = 0;
             
             while (currentSeries < seriesCount) {
@@ -696,15 +1204,14 @@ document.getElementById('btn-export-pdf').addEventListener('click', async () => 
                 const col = pageIndex % 2; 
                 const row = Math.floor(pageIndex / 2); 
                 
-                // 動態排列座標
                 const x = 15 + (col * 95);
                 const y = 10 + (row * 95);
                 
                 const startIdx = currentSeries * 10;
-                const endIdx = Math.min(startIdx + 9, shotHistory.length - 1);
+                const endIdx = Math.min(startIdx + 9, validShots.length - 1);
                 
                 const titleStr = `Series ${currentSeries + 1} (${startIdx + 1}-${endIdx + 1}發)`;
-                const seriesImg = createPdfTargetCanvas(startIdx, endIdx, titleStr, true);
+                const seriesImg = createPdfTargetCanvas(startIdx, endIdx, titleStr, true, validShots);
                 
                 pdf.addImage(seriesImg, 'JPEG', x, y, 80, 92);
                 currentSeries++;
