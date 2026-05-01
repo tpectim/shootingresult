@@ -803,9 +803,6 @@ let timeChartInstance = null;
 let scoreLineChartInstance = null;
 let timeLineChartInstance = null;
 
-Chart.defaults.color = '#bbb';
-Chart.defaults.borderColor = 'rgba(255,255,255,0.1)';
-
 document.getElementById('btn-show-charts').addEventListener('click', () => {
     // 過濾掉未擊發的紀錄
     const validShots = shotHistory.filter(s => !s.isMisfire);
@@ -1170,6 +1167,51 @@ function createPdfHeaderCanvas() {
     return cvs.toDataURL('image/jpeg', 1.0);
 }
 
+// --- 新增：將圖表與標題結合成一張大圖片的輔助函式 ---
+function createPdfChartPageCanvas(titleText, subtitle1, chart1Id, subtitle2, chart2Id) {
+    const c1 = document.getElementById(chart1Id);
+    const c2 = document.getElementById(chart2Id);
+    if (!c1 || !c2) return null;
+
+    const cvs = document.createElement('canvas');
+    cvs.width = 1200; // 設定高解析度寬度
+    
+    // 按比例計算圖表的高度 (以寬度 1100 為基準)
+    const c1Height = (c1.height * 1100) / c1.width;
+    const c2Height = (c2.height * 1100) / c2.width;
+    
+    // 計算整張畫布所需的總高度
+    cvs.height = 120 + c1Height + 100 + c2Height + 50; 
+    
+    const ctx = cvs.getContext('2d');
+    ctx.fillStyle = '#FFF'; // 白色背景
+    ctx.fillRect(0, 0, cvs.width, cvs.height);
+    
+    // 繪製大標題
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 48px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(titleText, 600, 70);
+    
+    // 繪製第一個圖表與副標題
+    let currentY = 140;
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 36px Arial, sans-serif';
+    ctx.fillText(subtitle1, 50, currentY);
+    
+    currentY += 30;
+    ctx.drawImage(c1, 50, currentY, 1100, c1Height);
+    
+    // 繪製第二個圖表與副標題
+    currentY += c1Height + 80;
+    ctx.fillText(subtitle2, 50, currentY);
+    
+    currentY += 30;
+    ctx.drawImage(c2, 50, currentY, 1100, c2Height);
+    
+    return cvs.toDataURL('image/jpeg', 1.0);
+}
+
 document.getElementById('btn-export-pdf').addEventListener('click', async () => {
     const validShots = shotHistory.filter(s => !s.isMisfire);
     if(validShots.length === 0) return alert("目前沒有有效的擊發紀錄可匯出");
@@ -1178,6 +1220,16 @@ document.getElementById('btn-export-pdf').addEventListener('click', async () => 
     const originalText = btn.textContent;
     btn.textContent = "⚙️ 處理中...";
     
+    // 強制在背景渲染圖表，確保有最新的 Canvas 圖片
+    const chartOverlay = document.getElementById('chart-overlay');
+    const wasHidden = (window.getComputedStyle(chartOverlay).display === 'none');
+    
+    if (wasHidden) {
+        chartOverlay.style.visibility = 'hidden'; 
+    }
+    document.getElementById('btn-show-charts').click(); 
+
+    // 等待 800ms 讓繪圖完成
     setTimeout(() => {
         try {
             const { jsPDF } = window.jspdf;
@@ -1191,8 +1243,8 @@ document.getElementById('btn-export-pdf').addEventListener('click', async () => 
             
             const allScoresImg = createAllScoresCanvas(validShots);
             const pdfProps = pdf.getImageProperties(allScoresImg);
-            const pdfHeight = (180 * pdfProps.height) / pdfProps.width;
-            pdf.addImage(allScoresImg, 'JPEG', 15, 190, 180, pdfHeight);
+            const pdfHeightAllScores = (180 * pdfProps.height) / pdfProps.width;
+            pdf.addImage(allScoresImg, 'JPEG', 15, 190, 180, pdfHeightAllScores);
             
             const seriesCount = Math.ceil(validShots.length / 10);
             let currentSeries = 0;
@@ -1217,6 +1269,42 @@ document.getElementById('btn-export-pdf').addEventListener('click', async () => 
                 currentSeries++;
             }
             
+            // ==========================================
+            // --- 修正版：將圖表加入 PDF 開始 ---
+            // ==========================================
+            
+            // 1. 產生「長條圖」的完整頁面圖片並加入 PDF
+            const barPageImg = createPdfChartPageCanvas(
+                "成績分析圖表 (長條圖)", 
+                "單發分數", "scoreChartCanvas", 
+                "單發耗時", "timeChartCanvas"
+            );
+            
+            if (barPageImg) {
+                pdf.addPage();
+                const props = pdf.getImageProperties(barPageImg);
+                const pdfHeight = (190 * props.height) / props.width; // 保持比例，寬度為 190mm
+                pdf.addImage(barPageImg, 'JPEG', 10, 15, 190, pdfHeight);
+            }
+
+            // 2. 產生「趨勢線」的完整頁面圖片並加入 PDF
+            const linePageImg = createPdfChartPageCanvas(
+                "成績分析圖表 (趨勢線)", 
+                "單發分數走勢", "scoreLineChartCanvas", 
+                "單發耗時走勢", "timeLineChartCanvas"
+            );
+            
+            if (linePageImg) {
+                pdf.addPage();
+                const props = pdf.getImageProperties(linePageImg);
+                const pdfHeight = (190 * props.height) / props.width; // 保持比例，寬度為 190mm
+                pdf.addImage(linePageImg, 'JPEG', 10, 15, 190, pdfHeight);
+            }
+            
+            // ==========================================
+            // --- 修正版：將圖表加入 PDF 結束 ---
+            // ==========================================
+            
             const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,"");
             pdf.save(`打靶報表_${shooterName}_${dateStr}.pdf`);
             
@@ -1225,8 +1313,12 @@ document.getElementById('btn-export-pdf').addEventListener('click', async () => 
             alert("匯出 PDF 發生錯誤，請確認網路連線正常。");
         } finally {
             btn.textContent = originalText;
+            if (wasHidden) {
+                chartOverlay.style.display = 'none';
+                chartOverlay.style.visibility = 'visible'; 
+            }
         }
-    }, 100); 
+    }, 800); 
 });
 
 resizeCanvases();
